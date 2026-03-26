@@ -65,6 +65,11 @@ python scan_server.py
 情況顯示查到名稱（例如 lpmos、iPad）粗體正常顯示查不到（例如 IP 攝影機、IoT 裝置）灰色斜體「未知」
 IP 欄位則是獨立乾淨的 IP，不再重複顯示。
 注意： scan_server.py 有更新，記得兩個檔案都重新下載，然後重啟後端再掃描。
+<img width="627" height="674" alt="image" src="https://github.com/user-attachments/assets/f54b61c4-b85e-44ca-b083-76e8e3e6c83f" />
+<img width="804" height="743" alt="image" src="https://github.com/user-attachments/assets/dd8d7ed3-bd8d-4012-b3d1-d62aacc22eba" />
+<img width="685" height="640" alt="image" src="https://github.com/user-attachments/assets/d908a684-7474-41b6-9426-7cd74f3e2f32" />
+
+
 
 
 
