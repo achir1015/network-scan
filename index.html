@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>網路掃描記錄</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f0f2f5; --surface: #fff; --surface2: #f5f5f5;
+    --border: #d0d0d0; --border2: #e8e8e8;
+    --text: #1a1a1a; --text2: #555; --text3: #999;
+    --blue: #185FA5; --blue-light: #E6F1FB;
+    --green: #1D9E75; --red: #A32D2D; --amber: #BA7517;
+    --mono: 'Consolas','Courier New',monospace;
+  }
+  body { font-family:'Segoe UI','Microsoft JhengHei',sans-serif; font-size:13px; background:var(--bg); color:var(--text); min-height:100vh; padding:16px; }
+  .app { max-width:1040px; margin:0 auto; background:var(--surface); border:1px solid var(--border); border-radius:8px; overflow:hidden; box-shadow:0 2px 10px rgba(0,0,0,.1); }
+
+  .titlebar { padding:8px 12px; background:#1a3a5c; color:#fff; font-size:13px; font-weight:600; display:flex; align-items:center; gap:8px; }
+
+  .toolbar { display:flex; align-items:center; gap:4px; padding:7px 10px; background:var(--surface2); border-bottom:1px solid var(--border); flex-wrap:wrap; }
+  .toolbar button { display:inline-flex; align-items:center; gap:4px; padding:4px 11px; font-size:12px; cursor:pointer; border:1px solid var(--border); border-radius:4px; background:var(--surface); color:var(--text); font-family:inherit; }
+  .toolbar button:hover    { background:#e4e4e4; }
+  .toolbar button:disabled { opacity:.4; cursor:default; }
+  .toolbar button.primary { background:var(--blue); color:#fff; border-color:var(--blue); }
+  .toolbar button.primary:hover { background:#0C447C; }
+  .toolbar button.danger  { background:var(--red);  color:#fff; border-color:var(--red); }
+  .toolbar button.danger:hover  { background:#791F1F; }
+  .sep { width:1px; height:22px; background:var(--border); margin:0 3px; }
+  .spacer { flex:1; }
+  .scan-status { font-size:11px; color:var(--text3); white-space:nowrap; min-width:200px; text-align:right; }
+
+  .prog-wrap { height:3px; background:var(--border2); }
+  .prog-bar  { height:100%; width:0%; background:var(--blue); transition:width .15s linear; }
+
+  .info-bar { padding:5px 12px; font-size:11px; background:#e8f4ff; border-bottom:1px solid #b0d4f1; color:#185FA5; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .info-bar code { background:#d0e8ff; padding:1px 5px; border-radius:3px; font-family:var(--mono); }
+  .err-bar  { display:none; padding:5px 12px; font-size:11px; background:#fff0f0; border-bottom:1px solid #f5b0b0; color:var(--red); }
+
+  .range-bar { display:flex; align-items:center; gap:8px; padding:6px 10px; border-bottom:1px solid var(--border2); flex-wrap:wrap; }
+  .range-bar label { font-size:12px; color:var(--text2); white-space:nowrap; }
+  .range-bar input[type=text] { width:220px; padding:3px 8px; font-size:12px; border:1px solid var(--border); border-radius:4px; font-family:var(--mono); background:#fafafa; color:var(--text); }
+  .range-bar .hint { font-size:11px; color:var(--text3); }
+  .search-box { margin-left:auto; padding:3px 8px; font-size:12px; width:150px; border:1px solid var(--border); border-radius:4px; background:#fafafa; color:var(--text); font-family:inherit; }
+
+  .tabs { display:flex; border-bottom:1px solid var(--border); }
+  .tabs span { padding:5px 18px; font-size:12px; cursor:pointer; color:var(--text2); border-bottom:2px solid transparent; user-select:none; }
+  .tabs span.active { color:var(--blue); border-bottom-color:var(--blue); font-weight:600; }
+
+  .table-wrap { overflow-y:auto; max-height:460px; }
+  table { width:100%; border-collapse:collapse; table-layout:fixed; }
+  thead th { position:sticky; top:0; z-index:1; padding:6px 8px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; background:#eaecef; border-bottom:1px solid var(--border); color:var(--text2); user-select:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  thead th.sortable { cursor:pointer; }
+  thead th.sortable:hover { color:var(--text); }
+  tbody tr { border-bottom:1px solid var(--border2); transition:background .08s; }
+  tbody tr:hover    { background:#f0f6ff; }
+  tbody tr.selected { background:var(--blue-light); }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(-3px)} to{opacity:1;transform:translateY(0)} }
+  tbody tr.new-row  { animation:fadeIn .25s ease; }
+  tbody td { padding:5px 8px; font-size:12px; vertical-align:middle; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  /* 狀態圖示 */
+  .status-cell { display:flex; align-items:center; gap:5px; }
+  .dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+  .dot.on  { background:var(--green); box-shadow:0 0 0 2px rgba(29,158,117,.2); }
+  .dot.off { background:#bbb; }
+  .mon { display:inline-flex; flex-direction:column; align-items:center; gap:1px; }
+  .mon-s { width:18px; height:13px; border:1.5px solid currentColor; border-radius:2px; }
+  .mon-p { width:6px; height:3px; border:1.5px solid currentColor; border-top:none; border-radius:0 0 2px 2px; }
+  .mon-b { width:10px; height:1.5px; background:currentColor; border-radius:1px; }
+  .mon.on  { color:var(--blue); }
+  .mon.off { color:#bbb; }
+
+  /* 名稱欄：查到名稱 → 正常顯示；查不到 → 灰色斜體「未知」 */
+  .name-known   { color:var(--text); font-weight:500; }
+  .name-unknown { color:var(--text3); font-style:italic; }
+
+  td.ip-cell     { font-family:var(--mono); font-size:11px; }
+  td.mac-cell    { font-family:var(--mono); font-size:11px; color:#444; }
+  td.vendor-cell { color:var(--text2); font-size:11px; }
+  .note-input { width:100%; border:none; background:transparent; font-size:12px; color:var(--text2); font-family:inherit; outline:none; cursor:text; }
+  .note-input:focus { background:#fffce6; border-radius:3px; padding:0 3px; }
+  .note-input::placeholder { color:#ccc; font-style:italic; }
+  .empty-hint { text-align:center; padding:40px 0; color:var(--text3); font-size:13px; }
+
+  .stats-bar { display:flex; align-items:center; gap:18px; flex-wrap:wrap; padding:5px 10px; font-size:11px; color:var(--text3); border-top:1px solid var(--border2); background:var(--surface2); }
+  .stats-bar b      { font-weight:600; color:var(--text); }
+  .stats-bar .v-on  { color:var(--green); font-weight:600; }
+  .stats-bar .t-info { margin-left:auto; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="titlebar">📡 &nbsp;網路掃描記錄（ARP 模式）</div>
+
+  <div class="toolbar">
+    <button class="primary" id="scanBtn" onclick="startScan()">▶ 掃描</button>
+    <button class="danger"  id="stopBtn" onclick="stopScan()" disabled>⏹ 停止</button>
+    <div class="sep"></div>
+    <button onclick="sortBy('ip')">IP ↕</button>
+    <button onclick="sortBy('name')">名稱 ↕</button>
+    <div class="sep"></div>
+    <button onclick="exportCSV()">⬇ 匯出 CSV</button>
+    <button onclick="addRow()">＋ 新增</button>
+    <div class="sep"></div>
+    <button onclick="deleteSelected()">✕ 刪除</button>
+    <div class="spacer"></div>
+    <span class="scan-status" id="scanStatus">待機中</span>
+  </div>
+
+  <div class="prog-wrap"><div class="prog-bar" id="progBar"></div></div>
+
+  <div class="info-bar">
+    ℹ 需先以「系統管理員」開啟 PowerShell，執行：
+    <code>python scan_server.py</code>
+    &nbsp;後端：http://127.0.0.1:5050&nbsp;
+    <button onclick="checkServer()" style="padding:2px 8px;font-size:11px;cursor:pointer;border:1px solid var(--blue);border-radius:3px;background:transparent;color:var(--blue);">測試連線</button>
+    <span id="serverStatus" style="font-size:11px;margin-left:4px;"></span>
+  </div>
+  <div class="err-bar" id="errBar"></div>
+
+  <div class="range-bar">
+    <label>範圍：</label>
+    <input type="text" id="rangeInput" value="192.168.6.1-254" />
+    <span class="hint">例: 192.168.6.1-254 &nbsp;|&nbsp; 192.168.6.0/24 &nbsp;|&nbsp; 192.168.6.1-50,192.168.6.200</span>
+    <input type="text" class="search-box" placeholder="🔍 搜尋…" oninput="filterRows(this.value)" />
+  </div>
+
+  <div class="tabs">
+    <span class="active" onclick="switchTab(this,'result')">結果</span>
+    <span onclick="switchTab(this,'fav')">我的最愛</span>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <colgroup>
+        <col style="width:64px">   <!-- 狀態 -->
+        <col style="width:160px">  <!-- 名稱 -->
+        <col style="width:130px">  <!-- IP -->
+        <col style="width:155px">  <!-- MAC -->
+        <col style="width:120px">  <!-- 製造商 -->
+        <col>                      <!-- 註解 -->
+        <col style="width:48px">   <!-- ⭐ -->
+      </colgroup>
+      <thead>
+        <tr>
+          <th>狀態</th>
+          <th class="sortable" onclick="sortBy('name')">名稱 ↕</th>
+          <th class="sortable" onclick="sortBy('ip')">IP ↕</th>
+          <th>MAC 位址</th>
+          <th>製造商</th>
+          <th>註解</th>
+          <th style="text-align:center">⭐</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody">
+        <tr><td colspan="7"><div class="empty-hint">按「掃描」開始 ARP 探測</div></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="stats-bar">
+    <span>發現裝置: <b id="statTotal">0</b></span>
+    <span>上線: <span class="v-on" id="statOnline">0</span></span>
+    <span>掃描範圍: <b id="statRange">—</b> 個 IP</span>
+    <span class="t-info" id="scanTime"></span>
+  </div>
+</div>
+
+<script>
+/* ══ 狀態 ══ */
+let devices     = [];
+let filterText  = '';
+let currentTab  = 'result';
+let selectedIdx = -1;
+let scanStart   = null;
+let scanDone    = false;
+
+const SERVER = 'http://127.0.0.1:5050';
+
+/* ══ 測試後端 ══ */
+async function checkServer() {
+  const el = document.getElementById('serverStatus');
+  el.style.color = '#888'; el.textContent = '測試中…';
+  try {
+    const r = await fetch(SERVER + '/', { mode:'cors', cache:'no-store' });
+    if (r.ok) {
+      el.style.color = 'var(--green)'; el.textContent = '✓ 後端正常';
+      document.getElementById('errBar').style.display = 'none';
+    } else throw new Error();
+  } catch {
+    el.style.color = 'var(--red)'; el.textContent = '✗ 無法連線';
+    showErr('無法連線到後端，請確認已用系統管理員執行 scan_server.py');
+  }
+}
+
+/* ══ 掃描 ══ */
+function startScan() {
+  const range = document.getElementById('rangeInput').value.trim();
+  if (!range) { alert('請輸入 IP 範圍'); return; }
+
+  devices     = [];
+  selectedIdx = -1;
+  scanDone    = false;
+  scanStart   = new Date();
+
+  document.getElementById('scanBtn').disabled     = true;
+  document.getElementById('stopBtn').disabled     = false;
+  document.getElementById('errBar').style.display = 'none';
+  document.getElementById('progBar').style.width  = '0%';
+  document.getElementById('scanTime').textContent  = '開始: ' + fmt(scanStart);
+  document.getElementById('scanStatus').textContent = '連線中…';
+  renderBody();
+
+  fetchStream(SERVER + '/scan?range=' + encodeURIComponent(range));
+}
+
+async function fetchStream(url) {
+  try {
+    const resp = await fetch(url, { cache:'no-store' });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+
+    const reader  = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let   buf     = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream:true });
+      const parts = buf.split('\n\n');
+      buf = parts.pop();
+      for (const part of parts) {
+        const line = part.trim();
+        if (line.startsWith('data:')) handleMsg(line.slice(5).trim());
+      }
+    }
+    if (!scanDone) finishScan(false);
+  } catch (e) {
+    if (!scanDone) {
+      showErr('連線失敗：' + e.message + '　請確認後端是否已啟動。');
+      finishScan(true);
+    }
+  }
+}
+
+function handleMsg(raw) {
+  let msg;
+  try { msg = JSON.parse(raw); } catch { return; }
+
+  if (msg.progress) {
+    const pct = Math.round(msg.done / msg.total * 100);
+    document.getElementById('progBar').style.width    = pct + '%';
+    document.getElementById('scanStatus').textContent =
+      '掃描中… ' + msg.done + ' / ' + msg.total + '　已發現 ' + msg.found + ' 台';
+    document.getElementById('statRange').textContent  = msg.total;
+    return;
+  }
+
+  if (msg.done === true) {
+    finishScan(false, msg.total, msg.found);
+    return;
+  }
+
+  /* 新裝置：名稱欄優先顯示 hostname，查不到則留空（renderBody 處理顯示） */
+  devices.push({
+    name:   msg.hostname || '',   // 反向 DNS 名稱，可能為空
+    ip:     msg.ip,
+    mac:    msg.mac    || '',
+    vendor: msg.vendor || '',
+    note:   '',
+    online: true,
+    fav:    false,
+    isNew:  true,
+  });
+  renderBody();
+}
+
+function stopScan() {
+  scanDone = true;
+  finishScan(true);
+}
+
+function finishScan(stopped, total, found) {
+  scanDone = true;
+  document.getElementById('scanBtn').disabled = false;
+  document.getElementById('stopBtn').disabled = true;
+  document.getElementById('progBar').style.width = '100%';
+  const elapsed = ((new Date() - scanStart) / 1000).toFixed(1);
+  document.getElementById('scanStatus').textContent =
+    stopped          ? '已停止' :
+    total === undefined ? '完成 ✓  (' + elapsed + ' 秒)' :
+    '完成 ✓  發現 ' + found + ' 台 (' + elapsed + ' 秒)';
+  document.getElementById('scanTime').textContent =
+    '完成: ' + fmt(new Date()) + '，耗時 ' + elapsed + ' 秒';
+  if (devices.length === 0) renderBody();
+}
+
+/* ══ 渲染 ══ */
+function renderBody() {
+  const body = document.getElementById('tableBody');
+  const list = devices.filter(d => {
+    if (currentTab === 'fav' && !d.fav) return false;
+    return !filterText ||
+      d.ip.includes(filterText) ||
+      d.name.toLowerCase().includes(filterText) ||
+      d.mac.toLowerCase().includes(filterText) ||
+      d.vendor.toLowerCase().includes(filterText) ||
+      d.note.toLowerCase().includes(filterText);
+  });
+
+  if (!list.length) {
+    const msg =
+      document.getElementById('scanBtn').disabled ? '掃描中，正在尋找裝置…' :
+      currentTab === 'fav' ? '尚無加入最愛的裝置' :
+      '未發現裝置';
+    body.innerHTML = '<tr><td colspan="7"><div class="empty-hint">' + msg + '</div></td></tr>';
+    updateStats(); return;
+  }
+
+  body.innerHTML = list.map(d => {
+    const ri  = devices.indexOf(d);
+    const sel = ri === selectedIdx ? ' selected' : '';
+    const neu = d.isNew ? ' new-row' : '';
+    d.isNew   = false;
+
+    /* 名稱欄：有名稱 → 粗體；沒有名稱 → 灰色「未知」 */
+    const nameHtml = d.name
+      ? '<span class="name-known">'   + esc(d.name) + '</span>'
+      : '<span class="name-unknown">未知</span>';
+
+    return '<tr class="' + sel + neu + '" onclick="selectRow(' + ri + ')">' +
+      '<td><div class="status-cell">' +
+        '<span class="dot on"></span>' +
+        '<span class="mon on"><span class="mon-s"></span><span class="mon-p"></span><span class="mon-b"></span></span>' +
+      '</div></td>' +
+      '<td title="' + esc(d.name) + '">' + nameHtml + '</td>' +
+      '<td class="ip-cell">' + d.ip + '</td>' +
+      '<td class="mac-cell">' + esc(d.mac) + '</td>' +
+      '<td class="vendor-cell">' + (esc(d.vendor) || '<span style="color:#ccc">—</span>') + '</td>' +
+      '<td><input class="note-input" value="' + esc(d.note) + '" placeholder="輸入備註…"' +
+        ' onchange="devices[' + ri + '].note=this.value" onclick="event.stopPropagation()"/></td>' +
+      '<td style="text-align:center"><span style="cursor:pointer;font-size:14px;opacity:' + (d.fav?1:.2) + '"' +
+        ' onclick="event.stopPropagation();toggleFav(' + ri + ')">⭐</span></td>' +
+    '</tr>';
+  }).join('');
+  updateStats();
+}
+
+function updateStats() {
+  document.getElementById('statTotal').textContent  = devices.length;
+  document.getElementById('statOnline').textContent = devices.filter(d => d.online).length;
+}
+
+/* ══ 互動 ══ */
+function selectRow(i) { selectedIdx = selectedIdx === i ? -1 : i; renderBody(); }
+function switchTab(el, tab) {
+  document.querySelectorAll('.tabs span').forEach(s => s.classList.remove('active'));
+  el.classList.add('active'); currentTab = tab; renderBody();
+}
+function filterRows(v) { filterText = v.toLowerCase(); renderBody(); }
+function sortBy(key) {
+  devices.sort((a, b) => {
+    if (key === 'ip') {
+      const n = ip => ip.split('.').map(x => x.padStart(3,'0')).join('');
+      return n(a.ip) < n(b.ip) ? -1 : 1;
+    }
+    return (a[key]||'').toLowerCase() < (b[key]||'').toLowerCase() ? -1 : 1;
+  });
+  renderBody();
+}
+function toggleFav(i) { devices[i].fav = !devices[i].fav; renderBody(); }
+function addRow() {
+  devices.push({ name:'', ip:'0.0.0.0', mac:'', vendor:'', note:'', online:false, fav:false });
+  renderBody();
+}
+function deleteSelected() {
+  if (selectedIdx < 0) { alert('請先點選一列再刪除。'); return; }
+  if (!confirm('確定刪除這筆記錄？')) return;
+  devices.splice(selectedIdx, 1); selectedIdx = -1; renderBody();
+}
+
+/* ══ 匯出 CSV ══ */
+function exportCSV() {
+  const hdr  = '狀態,名稱,IP,MAC位址,製造商,註解\n';
+  const rows = devices.map(d =>
+    ['上線', d.name || '未知', d.ip, d.mac, d.vendor, d.note]
+      .map(v => '"' + String(v).replace(/"/g,'""') + '"').join(',')
+  ).join('\n');
+  const blob = new Blob(['\uFEFF' + hdr + rows], { type:'text/csv;charset=utf-8;' });
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(blob),
+    download: 'arp_scan_' + new Date().toISOString().slice(0,10) + '.csv'
+  });
+  a.click(); URL.revokeObjectURL(a.href);
+}
+
+/* ══ 工具 ══ */
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function fmt(d) { return d.toLocaleTimeString('zh-TW'); }
+function showErr(msg) {
+  const el = document.getElementById('errBar');
+  el.textContent = '⚠ ' + msg; el.style.display = 'block';
+}
+
+window.onload = () => setTimeout(checkServer, 600);
+</script>
+</body>
+</html>
